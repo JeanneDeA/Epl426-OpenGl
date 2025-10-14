@@ -12,11 +12,25 @@
 // Global Variables
 bool b_culling = false;
 
+
+
 bool movingPlanetFlag = true;
 float anglePlanet = 0.0f;
 
-bool movingPlaneFlag = false;
-float planeSpeed = 0.7f;
+bool movingPlaneFlag = true;
+float anglePlane = 0.0f;
+float planeSpeed = 1.0f;
+float planeMove = 0;
+
+
+
+bool movingOrbitFlag = true;
+float orbitRadius = 8.0f;
+float orbitAngle = 0.0f;
+float orbitMove = 0;
+float orbitSpeed = 0.5f;
+
+float sunLightIntensity = 1.0f;
 
 
 //===============================================================================================
@@ -46,29 +60,63 @@ void createMoon(float moonRadius = 0.5f, int slices = 60, int stacks = 60);
 void createSun(float maxRadius = 4.0f, float decrement = 0.8f);
 
 void drawAxis(float length = 3.0f);
+void initGeneralLight();
+void initSunLight();
+
 
 
 void initLights(void) {
-    glEnable(GL_LIGHTING);
 
-    // Enable and configure GL_LIGHT0
-    glEnable(GL_LIGHT0);
+	initGeneralLight();
+	initSunLight();
 
-    // Set light position (directional light from above and in front)
-    GLfloat lightPos[] = { 0.0f, 0.0f, 30.0f, 1.0f }; 
-    glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
+}
+ 
+void initGeneralLight() {
+	glEnable(GL_LIGHTING);
 
-    // Set diffuse and ambient color for the light
-    GLfloat diffuse[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    GLfloat ambient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
-    GLfloat specular[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
-    glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
-    glLightfv(GL_LIGHT0, GL_SPECULAR, specular);
+	glEnable(GL_LIGHT0);
 
-    // Optionally, set global ambient light
-    GLfloat globalAmbient[] = { 0.1f, 0.1f, 0.1f, 1.0f };
-    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, globalAmbient);
+	GLfloat lightPos[] = { 0.0f, 0.0f, 30.0f, 0.0f };
+	glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
+
+	GLfloat diffuse[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	GLfloat ambient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
+	GLfloat specular[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
+	glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
+	glLightfv(GL_LIGHT0, GL_SPECULAR, specular);
+
+	/*GLfloat globalAmbient[] = { 0.1f, 0.1f, 0.1f, 1.0f };
+	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, globalAmbient);*/
+}
+ 
+void initSunLight() {
+	glEnable(GL_LIGHTING);
+	glEnable(GL_LIGHT1);
+
+
+	float orbitAngle = anglePlanet * orbitSpeed;
+
+
+	float sunX = orbitRadius * cos(orbitAngle * PI / 180.0f);
+	float sunY = orbitRadius * sin(orbitAngle * PI / 180.0f);
+	float sunZ = 0.0f;
+
+	GLfloat lightPos[] = { sunX, sunY, sunZ, 1.0f };
+	glLightfv(GL_LIGHT1, GL_POSITION, lightPos);
+
+	GLfloat matSpec[] = { 0.1, 0.1,0.1,1 };
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, matSpec);
+	GLfloat shininess[] = { 64 };
+	glMaterialfv(GL_FRONT, GL_SHININESS, shininess);
+	GLfloat lightOn[4] = { 1,1,1,1 };
+	GLfloat lightAmbientOn[4] = { 0.1,0.1,0.1,1 };
+	glLightfv(GL_LIGHT1, GL_AMBIENT, lightAmbientOn);
+	glLightfv(GL_LIGHT1, GL_DIFFUSE, lightOn);
+	glLightfv(GL_LIGHT1, GL_SPECULAR, lightOn);
+
+
 }
 
 bool init(void)
@@ -85,11 +133,7 @@ bool init(void)
     glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);	// Hint for nice perspective interpolation
 	glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);	// Set the color tracking for both faces for both the ambient and diffuse components
 	
-	//// Set Specular
-	//GLfloat matSpec[] = { 0.1, 0.1,0.1,1 };
-	//glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, matSpec);
-	//GLfloat shininess[] = { 64 };
-	//glMaterialfv(GL_FRONT, GL_SHININESS, shininess);
+
 	glEnable(GL_NORMALIZE);
 	glFrontFace(GL_CCW);                               //Counter Clock Wise definition of the front and back side of faces
 	glCullFace(GL_BACK);                               //Hide the back side
@@ -97,19 +141,19 @@ bool init(void)
 	return true;
 }
 
-float cameraX = 0.0f;
-float cameraY = 0.0f;
-float cameraZ = 30.0f; // Default Z
-float cameraStep = 1.0f;
-
 void positionCamera() {
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    gluPerspective(45.0f, aspect, 0.1, 100.0);
-    gluLookAt(cameraX, cameraY, cameraZ,   // Camera position
-              0.0f, 0.0f, 0.0f,           // Look at the origin
-              0.0f, 1.0f, 0.0f);          // Up vector
-    glMatrixMode(GL_MODELVIEW);
+
+		glMatrixMode(GL_PROJECTION);     // Select The Projection Matrix
+
+		glLoadIdentity();                // Reset The Projection Matrix
+		gluPerspective(45.0f, aspect, 0.1, 100.0);
+		gluLookAt(0.0f, 0.0f, 30.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+		//gluLookAt(10.0f,- 10.0f, 60.0f, 10.0f, -10.0f, 0.0f, 1.0f, 1.0f, 0.0f);
+
+		//camera transformations go here
+		glMatrixMode(GL_MODELVIEW);      // Select The Modelview Matrix
+
+	
 }
 
 
@@ -130,25 +174,37 @@ void keyboard(unsigned char key, int x, int y)
     switch (key) {
         case 27: // Escape
             exit(0);
-            break;
-        case 'w': // Move camera forward (decrease Z)
-            cameraZ -= cameraStep;
-            break;
-        case 's': // Move camera backward (increase Z)
-            cameraZ += cameraStep;
-            break;
-        case 'a': // Move camera left (decrease X)
-            cameraX -= cameraStep;
-            break;
-        case 'd': // Move camera right (increase X)
-            cameraX += cameraStep;
-            break;
-        case 'q': // Move camera up (increase Y)
-            cameraY += cameraStep;
-            break;
-        case 'e': // Move camera down (decrease Y)
-            cameraY -= cameraStep;
-            break;
+			break;
+		case 't':
+			planeSpeed += 0.1f;
+			if (planeSpeed > 5.0f) {
+				printf("Max speed reached\n");
+				planeSpeed = 1.0f;
+			}
+			break;
+		case 'y':
+			planeSpeed -= 0.1f;
+			if (planeSpeed < 0.0f) {
+				printf("Min speed reached\n");
+				planeSpeed = 1.0f;
+			}
+			break;
+		case 'o':
+			orbitSpeed += 0.1f;
+			if (orbitSpeed > 3.0f) {
+				printf("Max orbit speed reached\n");
+				orbitSpeed = 0.5f;
+			}
+			break;
+
+		case 'p':
+			orbitSpeed -= 0.1f;
+			if (orbitSpeed < 0.0f) {
+				printf("Min orbit speed reached\n");
+				orbitSpeed = 0.5f;
+			}
+			break;
+
         default:
             break;
     }
@@ -159,18 +215,7 @@ void keyboard(unsigned char key, int x, int y)
 void special_keys(int a_keys, int x, int y)
 {
     switch (a_keys) {
-        case GLUT_KEY_UP:
-            cameraY += cameraStep;
-            break;
-        case GLUT_KEY_DOWN:
-            cameraY -= cameraStep;
-            break;
-        case GLUT_KEY_LEFT:
-            cameraX -= cameraStep;
-            break;
-        case GLUT_KEY_RIGHT:
-            cameraX += cameraStep;
-            break;
+      
         case GLUT_KEY_F1:
             if (!g_gamemode) {
                 g_fullscreen = !g_fullscreen;
@@ -284,21 +329,20 @@ void createPlane() {
 	createStrechedSphere(0.5f, 60, 60,		1.0f, 1.0f, 1.0f, 1.0f,		1.0f, 2.0f, 1.2f);
 	glPopMatrix();
 
-	float propellerAngle = anglePlanet * planeSpeed;
 
 	//Propeller 1
 	glPushMatrix();
 	glTranslatef(0.0f, 0.0f, 1.0f);
 	createSphere(0.3f, 20, 20, 0.5f, 0.5f, 0.5f, 1.0f);
-	glRotatef(propellerAngle, 0.0f, 0.0f, 1.0f);
+	glRotatef(planeMove, 0.0f, 0.0f, 1.0f);
 	createStrechedSphere(0.3f, 20, 20,		0.5f, 0.5f, 0.5f, 0.8f,		3.0f, 0.5f, 1.0f);
 	glPopMatrix();	
 
-	//Propeller 1
+	//Propeller 2
 	glPushMatrix();
 	glTranslatef(0.0f, 0.0f, -1.0f);
 	createSphere(0.3f, 20, 20, 0.5f, 0.5f, 0.5f, 1.0f);
-	glRotatef(propellerAngle, 0.0f, 0.0f, 1.0f);
+	glRotatef(planeMove, 0.0f, 0.0f, 1.0f);
 	createStrechedSphere(0.3f, 20, 20,		0.5f, 0.5f, 0.5f, 0.8f,		3.0f, 0.5f, 1.0f);
 	glPopMatrix();
 
@@ -306,8 +350,8 @@ void createPlane() {
 	glPushMatrix();
 	glTranslatef(0.0f, 0.5f *3.0, 0.0f);
 	createSphere(0.3f, 20, 20, 0.5f, 0.5f, 0.5f, 1.0f);
-	glRotatef(propellerAngle, 0.0f, 1.0f, 0.0f);
-	createStrechedSphere(0.3f, 20, 20, 0.5f, 0.5f, 0.5f, 0.8f, 3.0f, 0.5f, 1.0f);
+	glRotatef(planeMove, 0.0f, 1.0f, 0.0f);
+	createStrechedSphere(0.3f, 20, 20, 0.5f, 0.5f, 0.5f, 0.8f, 5.0f, 0.5f, 1.0f);
 	glPopMatrix();
    
 }
@@ -335,6 +379,7 @@ int main(int argc, char** argv)
 		return -1;
 	}
 
+	glutSetCursor(GLUT_CURSOR_NONE);
 	glutDisplayFunc(render);                     // Register The Display Function
 	glutReshapeFunc(reshape);                    // Register The Reshape Handler
 	glutKeyboardFunc(keyboard);                  // Register The Keyboard Handler
@@ -374,20 +419,23 @@ void render(void)
 #pragma endregion
 
 #pragma region Orbit
-	float orbitRadius = 8.0f;
-	float orbitSpeed = 0.5f;
-	float orbitAngle = anglePlanet * orbitSpeed;
+	if (movingOrbitFlag) {
+		orbitAngle += 0.1f;	
+		orbitMove = orbitAngle * orbitSpeed;
+	}
 
 	glPushMatrix();
-	glRotated(orbitAngle, 0, 0, 1);
+	glRotated(orbitMove, 0, 0, 1);
 	glTranslatef(orbitRadius, 0.0f, 0.0f);
-	createMoon();
+	glDisable(GL_LIGHTING);
+	createSun();
+	glEnable(GL_LIGHTING);
 	glPopMatrix();
 
 	glPushMatrix();
-	glRotated(orbitAngle +180.0f, 0 , 0, 1);
+	glRotated(orbitMove +180.0f, 0 , 0, 1);
 	glTranslatef(orbitRadius, 0.0f, 0.0f);
-	createSun();
+	createMoon();
 	glPopMatrix();
 
 
@@ -395,10 +443,15 @@ void render(void)
 
 #pragma region Plane
 	float planeOrbitRadius = 4.0f;
-	float planeAngle = anglePlanet * planeSpeed;
+
+	if (movingPlaneFlag) {
+		anglePlane += 0.1f;
+		planeMove = anglePlane * planeSpeed;
+	}
+
 
 	glPushMatrix();
-	glRotated(planeAngle, 0, 0, 1);
+	glRotated(planeMove, 0, 0, 1);
 	glTranslated(planeOrbitRadius, 0.0f, 0.0f);
 	createPlane();
 	glPopMatrix();
@@ -406,7 +459,7 @@ void render(void)
 
 #pragma endregion
 
-	//drawAxis(); // Draw axes at the end
+	drawAxis(); // Draw axes at the end
 
     glutSwapBuffers();
 	glutPostRedisplay(); 

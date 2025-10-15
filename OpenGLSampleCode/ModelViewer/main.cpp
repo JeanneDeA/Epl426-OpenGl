@@ -8,48 +8,94 @@
 #include <glm/gtc/type_ptr.hpp>
 
 
+struct vector3d
+{
+	float X, Y, Z;
+
+	inline vector3d(void) {}
+	inline vector3d(const float x, const float y, const float z)
+	{
+		X = x; Y = y; Z = z;
+	}
+
+	inline vector3d operator + (const vector3d& A) const
+	{
+		return vector3d(X + A.X, Y + A.Y, Z + A.Z);
+	}
+
+	inline vector3d operator + (const float A) const
+	{
+		return vector3d(X + A, Y + A, Z + A);
+	}
+
+	inline float Dot(const vector3d& A) const
+	{
+		return A.X * X + A.Y * Y + A.Z * Z;
+	}
+};
+
+float Lerp(float a, float b, float w)
+{
+	return a + w * (b - a);
+}
+
+const float PI = 3.1415926535897932384626433832795028;
+
 
 // Global Variables
 bool b_culling = false;
 
+bool g_gamemode;
+bool g_fullscreen;
+float aspect = 1;
 
 
 bool movingPlanetFlag = true;
-float anglePlanet = 0.0f;
+float planetRotationAngle = 0.0f;
+float planetRotationSpeed = 30.0f;
+float planeOrbitRadius = 4.0f;
+
 
 bool movingPlaneFlag = true;
-float anglePlane = 0.0f;
+float planeOrbitAngle = 0.0f;
 float planeSpeed = 1.0f;
-float planeMove = 0;
+float planeBaseSpeed = 50.0f;
 
-
+float PropellerAngle = 0.0f;
+float PropellerSpeed = 720.0f;
 
 bool movingOrbitFlag = true;
-float orbitRadius = 8.0f;
-float orbitAngle = 0.0f;
-float orbitMove = 0;
+float sunOrbitAngle = 0.0f;   
+float orbitBaseSpeed = 15.0f;
 float orbitSpeed = 0.5f;
+float orbitRadius = 8.0f;
 
-float sunLightIntensity = 1.0f;
+bool planeLightOn = true;
+float sunLightIntensity = 2.0f;
+
+// Time management variables
+float lastTime = 0.0f;
+float currentTime = 0.0f;
+float deltaTime = 0.0f;
+			
 
 
-//===============================================================================================
-
-bool g_gamemode;				
-bool g_fullscreen;				
-
-float aspect = 1;
-
-const float PI = 3.1415926535897932384626433832795028;
-const float epsilon = 0.001;
-float angle = 0;
-
+// Function Prototypes
 void render(void);
-void initLights(void);
-bool init(void);
 void reshape(int w, int h);
+bool init(void);
+
+void initAnimation();
+void initLights(void);
+void initGeneralLight();
+void initSunLight();
+void initPlaneLight(void);
+
+void updateTime();
+
 void keyboard(unsigned char key, int x, int y);
 void special_keys(int a_keys, int x, int y);
+
 void positionCamera(void);
 
 void createSphere(float radius = 1.0f, int slices = 60, int stacks = 60, float r = 1.0f, float g = 0.0f, float b = 0.0f, float alpha = 1.0f);
@@ -60,102 +106,139 @@ void createMoon(float moonRadius = 0.5f, int slices = 60, int stacks = 60);
 void createSun(float maxRadius = 4.0f, float decrement = 0.8f);
 
 void drawAxis(float length = 3.0f);
-void initGeneralLight();
-void initSunLight();
 
 
+void updateTime() {
+	static bool firstTime = true;
+
+	if (firstTime) {
+		lastTime = (float)glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
+		firstTime = false;
+	}
+
+	currentTime = (float)glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
+	deltaTime = currentTime - lastTime;							//time passed since last frame in seconds
+	lastTime = currentTime;
+
+	if (deltaTime > 0.1f) deltaTime = 0.1f;
+}
+
+// Initialize animation timing so that the first frame has a valid time reference
+void initAnimation() {
+	lastTime = (float)glutGet(GLUT_ELAPSED_TIME) / 1000.0f;			
+	currentTime = lastTime;
+}
 
 void initLights(void) {
 
 	initGeneralLight();
 	initSunLight();
+	initPlaneLight();
 
 }
  
 void initGeneralLight() {
 	glEnable(GL_LIGHTING);
-
 	glEnable(GL_LIGHT0);
 
-	GLfloat lightPos[] = { 0.0f, 0.0f, 30.0f, 0.0f };
+	GLfloat lightPos[] = { 0.0f, 10.0f, 10.0f, 0.0f }; 
 	glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
 
-	GLfloat diffuse[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	GLfloat ambient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
-	GLfloat specular[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	GLfloat diffuse[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+	GLfloat ambient[] = { 0.1f, 0.1f, 0.1f, 1.0f };
+	GLfloat specular[] = { 0.2f, 0.2f, 0.2f, 1.0f };
+
 	glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
 	glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
 	glLightfv(GL_LIGHT0, GL_SPECULAR, specular);
-
-	/*GLfloat globalAmbient[] = { 0.1f, 0.1f, 0.1f, 1.0f };
-	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, globalAmbient);*/
 }
  
 void initSunLight() {
 	glEnable(GL_LIGHTING);
 	glEnable(GL_LIGHT1);
 
-
-	float orbitAngle = anglePlanet * orbitSpeed;
-
-
-	float sunX = orbitRadius * cos(orbitAngle * PI / 180.0f);
-	float sunY = orbitRadius * sin(orbitAngle * PI / 180.0f);
+	float sunX = orbitRadius * cos(sunOrbitAngle * PI / 180.0f);
+	float sunY = orbitRadius * sin(sunOrbitAngle * PI / 180.0f);
 	float sunZ = 0.0f;
 
-	GLfloat lightPos[] = { sunX, sunY, sunZ, 1.0f };
+	GLfloat lightPos[] = { sunX, sunY, sunZ, 1.0f };	
 	glLightfv(GL_LIGHT1, GL_POSITION, lightPos);
 
-	GLfloat matSpec[] = { 0.1, 0.1,0.1,1 };
-	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, matSpec);
-	GLfloat shininess[] = { 64 };
-	glMaterialfv(GL_FRONT, GL_SHININESS, shininess);
-	GLfloat lightOn[4] = { 1,1,1,1 };
-	GLfloat lightAmbientOn[4] = { 0.1,0.1,0.1,1 };
-	glLightfv(GL_LIGHT1, GL_AMBIENT, lightAmbientOn);
-	glLightfv(GL_LIGHT1, GL_DIFFUSE, lightOn);
-	glLightfv(GL_LIGHT1, GL_SPECULAR, lightOn);
+	const float minIntensity = 0.2f;
+	const float maxIntensity = 2.0f;
 
+	float timeFactor = (cos(sunOrbitAngle * PI / 180.0f) + 1) / 2;
 
+	float sunLightIntensity = Lerp(minIntensity, maxIntensity, timeFactor) ;
+
+	GLfloat lightDiffuse[] = { sunLightIntensity, sunLightIntensity * 0.9f, sunLightIntensity * 0.7f,1.0f };		
+	GLfloat lightAmbient[] = {0.2f * sunLightIntensity,	0.2f * sunLightIntensity, 0.1f * sunLightIntensity,	1.0f};
+	GLfloat lightSpecular[] = {1.0f,1.0f,0.8f,1.0f};
+
+	glLightfv(GL_LIGHT1, GL_DIFFUSE, lightDiffuse);
+	glLightfv(GL_LIGHT1, GL_AMBIENT, lightAmbient);
+	glLightfv(GL_LIGHT1, GL_SPECULAR, lightSpecular);
+
+	// Dimmeter light based on distance
+	glLightf(GL_LIGHT1, GL_CONSTANT_ATTENUATION, 0.5f);
+	glLightf(GL_LIGHT1, GL_LINEAR_ATTENUATION, 0.05f);
+	glLightf(GL_LIGHT1, GL_QUADRATIC_ATTENUATION, 0.001f);
 }
 
-bool init(void)
-{
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);             // Pixel Storage Mode To Byte Alignment
-	glEnable(GL_TEXTURE_2D);                           // Enable Texture Mapping 
-    glClearColor(0.5f, 0.5f, 0.5f, 0.5f);			   // Gray Background (CHANGED)
-    glClearDepth(1.0f);								   // Depth Buffer Setup
-    glDepthFunc(GL_LEQUAL);							   // The Type Of Depth Testing To Do
-    glEnable(GL_DEPTH_TEST);						   // Enables Depth Testing
-    glShadeModel(GL_SMOOTH);						   // Enable Smooth Shading
-	initLights();
-	glEnable(GL_COLOR_MATERIAL);					   // Enable Material Coloring
-    glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);	// Hint for nice perspective interpolation
-	glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);	// Set the color tracking for both faces for both the ambient and diffuse components
-	
+void initPlaneLight() {
+	glEnable(GL_LIGHTING);
+	glEnable(GL_LIGHT2);  // Use LIGHT2
 
-	glEnable(GL_NORMALIZE);
-	glFrontFace(GL_CCW);                               //Counter Clock Wise definition of the front and back side of faces
-	glCullFace(GL_BACK);                               //Hide the back side
-	
-	return true;
+	// Calculate plane position
+	float planeX = planeOrbitRadius * cos(planeOrbitAngle * PI / 180.0f);
+	float planeY = planeOrbitRadius * sin(planeOrbitAngle * PI / 180.0f);
+
+	// Light follows the plane
+	GLfloat lightPos[] = { planeX, planeY, 0.5f, 1.0f };
+	glLightfv(GL_LIGHT2, GL_POSITION, lightPos);
+
+	// Simple white light
+	GLfloat lightDiffuse[] = { 0.8f, 0.8f, 1.0f, 1.0f };
+	GLfloat lightAmbient[] = { 0.2f, 0.2f, 0.3f, 1.0f };
+	GLfloat lightSpecular[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+	glLightfv(GL_LIGHT2, GL_DIFFUSE, lightDiffuse);
+	glLightfv(GL_LIGHT2, GL_AMBIENT, lightAmbient);
+	glLightfv(GL_LIGHT2, GL_SPECULAR, lightSpecular);
+
+	// Moderate attenuation
+	glLightf(GL_LIGHT2, GL_CONSTANT_ATTENUATION, 0.5f);
+	glLightf(GL_LIGHT2, GL_LINEAR_ATTENUATION, 0.05f);
+	glLightf(GL_LIGHT2, GL_QUADRATIC_ATTENUATION, 0.001f);
 }
 
 void positionCamera() {
 
-		glMatrixMode(GL_PROJECTION);     // Select The Projection Matrix
+		glMatrixMode(GL_PROJECTION);     
 
 		glLoadIdentity();                // Reset The Projection Matrix
 		gluPerspective(45.0f, aspect, 0.1, 100.0);
-		gluLookAt(0.0f, 0.0f, 30.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
-		//gluLookAt(10.0f,- 10.0f, 60.0f, 10.0f, -10.0f, 0.0f, 1.0f, 1.0f, 0.0f);
+		gluLookAt(0.0f, 0.0f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
 
-		//camera transformations go here
 		glMatrixMode(GL_MODELVIEW);      // Select The Modelview Matrix
 
 	
 }
 
+void backgroundChange() {
+
+	vector3d dayColor = vector3d(0.3647f, 0.8f, 0.9098f);    // Sky blue
+	vector3d nightColor = vector3d(0.0078f, 0.0196f, 0.1098f); // Dark blue
+
+	float timeFactor = (cos(sunOrbitAngle * PI / 180.0f)+1)/2; 
+
+	float colorX = Lerp(nightColor.X, dayColor.X, timeFactor);
+	float colorY = Lerp(nightColor.Y, dayColor.Y, timeFactor);
+	float colorZ = Lerp(nightColor.Z, dayColor.Z, timeFactor);
+	
+
+	glClearColor(colorX, colorY, colorZ,1.0f);
+}
 
 void reshape(int w, int h)
 {
@@ -169,47 +252,81 @@ void reshape(int w, int h)
 	initLights();
 }
 
-void keyboard(unsigned char key, int x, int y)
-{
-    switch (key) {
-        case 27: // Escape
-            exit(0);
-			break;
-		case 't':
-			planeSpeed += 0.1f;
-			if (planeSpeed > 5.0f) {
-				printf("Max speed reached\n");
-				planeSpeed = 1.0f;
-			}
-			break;
-		case 'y':
-			planeSpeed -= 0.1f;
-			if (planeSpeed < 0.0f) {
-				printf("Min speed reached\n");
-				planeSpeed = 1.0f;
-			}
-			break;
-		case 'o':
-			orbitSpeed += 0.1f;
-			if (orbitSpeed > 3.0f) {
-				printf("Max orbit speed reached\n");
-				orbitSpeed = 0.5f;
-			}
-			break;
+void keyboard(unsigned char key, int x, int y) {
+	switch (key) {
+	case 27: // Escape
+		exit(0);
+		break;
+	case 't': // Increase plane speed smoothly
+		planeSpeed += 0.2f;
+		if (planeSpeed > 3.0f) {
+			planeSpeed = 3.0f;
+			printf("Max plane speed reached\n");
+		}
+		else {
+			printf("Plane speed: %.1f\n", planeSpeed);
+		}
+		break;
+	case 'y': // Decrease plane speed smoothly
+		planeSpeed -= 0.2f;
+		if (planeSpeed < 0.2f) {
+			planeSpeed = 0.2f;
+			printf("Min plane speed reached\n");
+		}
+		else {
+			printf("Plane speed: %.1f\n", planeSpeed);
+		}
+		break;
+	case 'o': // Increase orbit speed smoothly
+		orbitSpeed += 0.2f;
+		if (orbitSpeed > 10.0f) {
+			orbitSpeed = 10.0f;
+			printf("Max orbit speed reached\n");
+		}
+		else {
+			printf("Orbit speed: %.1f\n", orbitSpeed);
+		}
+		break;
+	case 'p': // Decrease orbit speed smoothly
+		orbitSpeed -= 0.2f;
+		if (orbitSpeed < 0.2f) {
+			orbitSpeed = 0.2f;
+			printf("Min orbit speed reached\n");
+		}
+		else {
+			printf("Orbit speed: %.1f\n", orbitSpeed);
+		}
+		break;
+	case 'r': // Reset all speeds to default
+		planeSpeed = 1.0f;
+		orbitSpeed = 0.5f;
+		printf("Speeds reset to default\n");
+		break;
+	case 'm': // Toggle planet rotation
+		movingPlanetFlag = !movingPlanetFlag;
+		break;
 
-		case 'p':
-			orbitSpeed -= 0.1f;
-			if (orbitSpeed < 0.0f) {
-				printf("Min orbit speed reached\n");
-				orbitSpeed = 0.5f;
-			}
-			break;
+	case 'l':
+		planeLightOn = !planeLightOn;
+		if (planeLightOn) {
+			glEnable(GL_LIGHT2);
+			printf("Plane light: ON\n");
+		}
+		else {
+			glDisable(GL_LIGHT2);
+			printf("Plane light: OFF\n");
+		}
+		break;
 
-        default:
-            break;
-    }
-    positionCamera();
-    glutPostRedisplay();
+	case ' ': // Toggle all animations
+		movingPlanetFlag = !movingPlanetFlag;
+		movingPlaneFlag = !movingPlaneFlag;
+		movingOrbitFlag = !movingOrbitFlag;
+		break;
+	default:
+		break;
+	}
+	glutPostRedisplay();
 }
 
 void special_keys(int a_keys, int x, int y)
@@ -267,28 +384,66 @@ void createSphere(float radius, int slices , int stacks,float r, float g , float
 
 void createPlanet(float planetRadius , int slices , int stacks , float diskInner, float diskOuter)
 {
-    glPushMatrix();
+	//Planet body
+	glPushMatrix();
 
-    // Draw the planet using createSphere
-    createSphere(planetRadius, slices, stacks, 0.8f, 0.8f, 0.0f, 0.8f);
+	GLfloat planetAmbient[] = { 0.3f, 0.3f, 0.1f, 1.0f };
+	GLfloat planetDiffuse[] = { 0.8f, 0.8f, 0.2f, 1.0f };
+	GLfloat planetSpecular[] = { 0.5f, 0.5f, 0.5f, 1.0f };
+	GLfloat shininess[] = { 60.0f };
 
-    // Draw the ring
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glColor4f(0.8f, 0.5f, 0.0f, 0.5f);
-    glRotated(70, 1, 0, 0);
+	glMaterialfv(GL_FRONT, GL_AMBIENT, planetAmbient);
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, planetDiffuse);
+	glMaterialfv(GL_FRONT, GL_SPECULAR, planetSpecular);
+	glMaterialfv(GL_FRONT, GL_SHININESS, shininess);
 
-    GLUquadric* ring = gluNewQuadric();
-    gluDisk(ring, diskInner, diskOuter, slices, stacks);
-    gluDeleteQuadric(ring);
-    glDisable(GL_BLEND);
+	createSphere(planetRadius, slices, stacks, 0.8f, 0.8f, 0.2f, 1.0f);
 
-    glPopMatrix();
+	//Rings
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDisable(GL_CULL_FACE);
+
+
+	GLfloat ringAmbient[] = { 0.4f, 0.3f, 0.1f, 0.5f };
+	GLfloat ringDiffuse[] = { 0.8f, 0.5f, 0.0f, 0.5f };
+	GLfloat ringSpecular[] = { 0.5f, 0.5f, 0.5f, 0.5f };
+
+	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, ringAmbient);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, ringDiffuse);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, ringSpecular);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, shininess);
+
+	GLUquadric* ring = gluNewQuadric();
+	glColor4f(0.8f, 0.5f, 0.0f, 0.5f);
+
+	glRotated(70, 1, 0, 0);
+	gluDisk(ring, diskInner, diskOuter, slices, stacks);
+
+
+	gluDeleteQuadric(ring);
+	glDisable(GL_BLEND);
+	if (b_culling) {
+		glEnable(GL_CULL_FACE);
+	}
+
+	glPopMatrix();
 }
+
 
 void createMoon(float moonRadius , int slices, int stacks )
 {
-    createSphere(moonRadius, slices, stacks, 0.5f, 0.5f, 0.5f, 1.0f);
+	GLfloat moonAmbient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
+	GLfloat moonDiffuse[] = { 0.6f, 0.6f, 0.6f, 1.0f };
+	GLfloat moonSpecular[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+	GLfloat shininess[] = { 10.0f };
+
+	glMaterialfv(GL_FRONT, GL_AMBIENT, moonAmbient);
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, moonDiffuse);
+	glMaterialfv(GL_FRONT, GL_SPECULAR, moonSpecular);
+	glMaterialfv(GL_FRONT, GL_SHININESS, shininess);
+
+	createSphere(moonRadius, slices, stacks, 0.6f, 0.6f, 0.6f, 1.0f);
 }
 
 void createSun(float maxRadius, float decrement) {
@@ -334,7 +489,7 @@ void createPlane() {
 	glPushMatrix();
 	glTranslatef(0.0f, 0.0f, 1.0f);
 	createSphere(0.3f, 20, 20, 0.5f, 0.5f, 0.5f, 1.0f);
-	glRotatef(planeMove, 0.0f, 0.0f, 1.0f);
+	glRotatef(PropellerAngle, 0.0f, 1.0f, 0.0f);
 	createStrechedSphere(0.3f, 20, 20,		0.5f, 0.5f, 0.5f, 0.8f,		3.0f, 0.5f, 1.0f);
 	glPopMatrix();	
 
@@ -342,58 +497,86 @@ void createPlane() {
 	glPushMatrix();
 	glTranslatef(0.0f, 0.0f, -1.0f);
 	createSphere(0.3f, 20, 20, 0.5f, 0.5f, 0.5f, 1.0f);
-	glRotatef(planeMove, 0.0f, 0.0f, 1.0f);
+	glRotatef(PropellerAngle, 0.0f, 1.0f, 0.0f);
 	createStrechedSphere(0.3f, 20, 20,		0.5f, 0.5f, 0.5f, 0.8f,		3.0f, 0.5f, 1.0f);
 	glPopMatrix();
 
 	//Propeller Front
 	glPushMatrix();
-	glTranslatef(0.0f, 0.5f *3.0, 0.0f);
+	glTranslatef(0.0f, 1.5, 0.0f);
 	createSphere(0.3f, 20, 20, 0.5f, 0.5f, 0.5f, 1.0f);
-	glRotatef(planeMove, 0.0f, 1.0f, 0.0f);
+	glRotatef(PropellerAngle, 0.0f, 1.0f, 0.0f);
 	createStrechedSphere(0.3f, 20, 20, 0.5f, 0.5f, 0.5f, 0.8f, 5.0f, 0.5f, 1.0f);
 	glPopMatrix();
    
 }
 
+bool init(void)
+{
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);             // Pixel Storage Mode To Byte Alignment
+	glEnable(GL_TEXTURE_2D);                           // Enable Texture Mapping 
+	glClearColor(0.0f, 0.0f, 0.1f, 1.0f);			   // Gray Background (CHANGED)
+	glClearDepth(1.0f);								   // Depth Buffer Setup
+	glDepthFunc(GL_LEQUAL);							   // The Type Of Depth Testing To Do
+	glEnable(GL_DEPTH_TEST);						   // Enables Depth Testing
+	glShadeModel(GL_SMOOTH);						   // Enable Smooth Shading
+
+	initLights();
+
+	glEnable(GL_COLOR_MATERIAL);					   // Enable Material Coloring
+	glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);	// Hint for nice perspective interpolation
+	glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);	// Set the color tracking for both faces for both the ambient and diffuse components
+
+
+	glEnable(GL_NORMALIZE);
+	glFrontFace(GL_CCW);                               //Counter Clock Wise definition of the front and back side of faces
+	glCullFace(GL_BACK);                               //Hide the back side
+
+	return true;
+}
 
 int main(int argc, char** argv)
 {
-	glutInit(&argc, argv);                           // GLUT Initializtion
-	glutInitDisplayMode(GLUT_DEPTH | GLUT_RGBA | GLUT_DOUBLE); // (CHANGED)|
+	glutInit(&argc, argv);											// GLUT Initializtion
+	glutInitDisplayMode(GLUT_DEPTH | GLUT_RGBA | GLUT_DOUBLE); 
 
 	if (g_gamemode) {
-		glutGameModeString("1024x768:32");            // Select 1024x768 In 32bpp Mode
+		glutGameModeString("1024x768:32");            
 		if (glutGameModeGet(GLUT_GAME_MODE_POSSIBLE))
 			glutEnterGameMode();                     // Enter Full Screen
 		else
 			g_gamemode = false;                     // Cannot Enter Game Mode, Switch To Windowed
 	}
 	if (!g_gamemode) {
-		glutInitWindowPosition(100, 100); // Window Position
-		glutInitWindowSize(500, 500); // Window Size If We Start In Windowed Mode
-		glutCreateWindow("EPL426"); // Window Title
+		glutInitWindowPosition(100, 100); 
+		glutInitWindowSize(500, 500); 
+		glutCreateWindow("EPL426 - Assignment1"); 
 	}
-	if (!init()) {                                   // Our Initialization
+	if (!init()) {                                   
 		fprintf(stderr,"Initialization failed.");
 		return -1;
 	}
 
+	initAnimation();								// Initialize animation timing
+
+
 	glutSetCursor(GLUT_CURSOR_NONE);
-	glutDisplayFunc(render);                     // Register The Display Function
-	glutReshapeFunc(reshape);                    // Register The Reshape Handler
-	glutKeyboardFunc(keyboard);                  // Register The Keyboard Handler
-	glutSpecialFunc(special_keys);               // Register Special Keys Handler
+	glutDisplayFunc(render);                     
+	glutReshapeFunc(reshape);                    
+	glutKeyboardFunc(keyboard);                  
+	glutSpecialFunc(special_keys);               
 	
-	glutIdleFunc(NULL);                        	 // We Do Rendering In Idle Time
-	glutMainLoop();                              // Go To GLUT Main Loop
+	glutIdleFunc(NULL);                        	 
+	glutMainLoop();                              
 	return 0;
 }
 
 // Our Rendering Is Done Here
 void render(void)   
 {
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);	
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	updateTime();
 
 	if (b_culling == true)
 		glEnable(GL_CULL_FACE);
@@ -402,66 +585,74 @@ void render(void)
 
 	glLoadIdentity();
 
+	// Update lighting every frame
+	initSunLight();
+	if(planeLightOn) initPlaneLight();
+	backgroundChange();
+
 
 #pragma region Planet
 
 	if (movingPlanetFlag) {
-		anglePlanet += 0.1f;
-		glPushMatrix();
-		glRotated(anglePlanet, 0, 1, 0);
-		createPlanet();
- 	   	glPopMatrix();
-	}
-	else {
-		createPlanet();
-	}
-	
-#pragma endregion
-
-#pragma region Orbit
-	if (movingOrbitFlag) {
-		orbitAngle += 0.1f;	
-		orbitMove = orbitAngle * orbitSpeed;
+		planetRotationAngle += planetRotationSpeed * deltaTime;	// degrees per second
+		if (planetRotationAngle > 360.0f) planetRotationAngle -= 360.0f;
 	}
 
 	glPushMatrix();
-	glRotated(orbitMove, 0, 0, 1);
+	glRotated(planetRotationAngle, 0, 1, 0);
+	createPlanet();
+	glPopMatrix();
+
+#pragma endregion
+
+#pragma region Orbit
+
+	if (movingOrbitFlag) {
+		sunOrbitAngle += orbitBaseSpeed * orbitSpeed * deltaTime; // degrees per second
+		if (sunOrbitAngle > 360.0f) sunOrbitAngle -= 360.0f;
+	}
+
+	// Draw Sun
+	glPushMatrix();
+	glRotated(sunOrbitAngle, 0, 0, 1);
 	glTranslatef(orbitRadius, 0.0f, 0.0f);
 	glDisable(GL_LIGHTING);
 	createSun();
 	glEnable(GL_LIGHTING);
 	glPopMatrix();
 
+	// Draw Moon 
 	glPushMatrix();
-	glRotated(orbitMove +180.0f, 0 , 0, 1);
+	glRotated(sunOrbitAngle + 180.0f, 0, 0, 1);
 	glTranslatef(orbitRadius, 0.0f, 0.0f);
 	createMoon();
 	glPopMatrix();
 
-
 #pragma endregion 
 
 #pragma region Plane
-	float planeOrbitRadius = 4.0f;
 
+	// Plane orbit
 	if (movingPlaneFlag) {
-		anglePlane += 0.1f;
-		planeMove = anglePlane * planeSpeed;
+		planeOrbitAngle += planeBaseSpeed * planeSpeed * deltaTime; // degrees per second
+		if (planeOrbitAngle > 360.0f) planeOrbitAngle -= 360.0f;
+
+		// Propeller rotation
+		PropellerAngle += PropellerSpeed * planeSpeed * deltaTime;
+		if (PropellerAngle > 360.0f) PropellerAngle -= 360.0f;
 	}
 
-
 	glPushMatrix();
-	glRotated(planeMove, 0, 0, 1);
+	glRotated(planeOrbitAngle, 0, 0, 1);
 	glTranslated(planeOrbitRadius, 0.0f, 0.0f);
+
+
 	createPlane();
 	glPopMatrix();
-
-
 #pragma endregion
 
-	drawAxis(); // Draw axes at the end
-
-    glutSwapBuffers();
-	glutPostRedisplay(); 
+	//drawAxis();
+	glutSwapBuffers();
+	glutPostRedisplay();
 }
 

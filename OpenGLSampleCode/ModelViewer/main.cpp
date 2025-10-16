@@ -1,4 +1,4 @@
-#include <stdio.h>           // Standard C/C++ Input-Output
+#include <stdio.h>           // Standard C/C++ Input-Object
 #include <math.h>            // Math Functions
 #include <windows.h>         // Standard Header For MSWindows Applications
 #include <gl/glut.h>            // The GL Utility Toolkit (GLUT) Header
@@ -6,6 +6,9 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
 
 struct vector3d
@@ -53,13 +56,17 @@ float aspect = 1;
 bool movingPlanetFlag = true;
 float planetRotationAngle = 0.0f;
 float planetRotationSpeed = 30.0f;
-float planeOrbitRadius = 4.0f;
+static GLuint planetTextureID = 0;
+
 
 
 bool movingPlaneFlag = true;
 float planeOrbitAngle = 0.0f;
+float planeOrbitRadius = 3.0f;
 float planeSpeed = 1.0f;
 float planeBaseSpeed = 50.0f;
+bool planeLightOn = true;
+
 
 float PropellerAngle = 0.0f;
 float PropellerSpeed = 720.0f;
@@ -68,16 +75,17 @@ bool movingOrbitFlag = true;
 float sunOrbitAngle = 0.0f;   
 float orbitBaseSpeed = 15.0f;
 float orbitSpeed = 0.5f;
-float orbitRadius = 8.0f;
-
-bool planeLightOn = true;
-float sunLightIntensity = 2.0f;
+float orbitRadius = 10.0f;
+float sunLightIntensity = 5.0f;
+static GLuint sunTextureID = 0;
+static GLuint moonTextureID = 0;
 
 // Time management variables
 float lastTime = 0.0f;
 float currentTime = 0.0f;
 float deltaTime = 0.0f;
 			
+
 
 
 // Function Prototypes
@@ -97,13 +105,14 @@ void keyboard(unsigned char key, int x, int y);
 void special_keys(int a_keys, int x, int y);
 
 void positionCamera(void);
+GLuint loadTexture(const char* filepath);
 
 void createSphere(float radius = 1.0f, int slices = 60, int stacks = 60, float r = 1.0f, float g = 0.0f, float b = 0.0f, float alpha = 1.0f);
 void createStrechedSphere(float radius = 1.0f, int slices = 60, int stacks = 60, float r = 0.8f, float g = 0.8f, float b = 0.0f, float alpha = 1.0f, float scaleX = 1.0f, float scaleY = 1.0f, float scaleZ = 1.5f);
 
-void createPlanet(float planetRadius = 2.0f, int slices = 60, int stacks = 60, float diskInner = 2.5f, float diskOuter = 3.0f);
-void createMoon(float moonRadius = 0.5f, int slices = 60, int stacks = 60);
-void createSun(float maxRadius = 4.0f, float decrement = 0.8f);
+void createPlanet(float planetRadius = 2.0f, int slices = 60, int stacks = 60, float diskInner = 2.5f, float diskOuter = 3.0f,GLuint textureID = planetTextureID);
+void createMoon(float moonRadius = 1.0f, int slices = 60, int stacks = 60, GLuint textureID = moonTextureID);
+void createSun(float maxRadius = 5.0f, float decrement = 0.5f, GLuint textureID = sunTextureID);
 
 void drawAxis(float length = 3.0f);
 
@@ -179,37 +188,101 @@ void initSunLight() {
 	glLightfv(GL_LIGHT1, GL_AMBIENT, lightAmbient);
 	glLightfv(GL_LIGHT1, GL_SPECULAR, lightSpecular);
 
-	// Dimmeter light based on distance
-	glLightf(GL_LIGHT1, GL_CONSTANT_ATTENUATION, 0.5f);
-	glLightf(GL_LIGHT1, GL_LINEAR_ATTENUATION, 0.05f);
-	glLightf(GL_LIGHT1, GL_QUADRATIC_ATTENUATION, 0.001f);
+	glLightf(GL_LIGHT1, GL_CONSTANT_ATTENUATION, 1.0f);    
+	glLightf(GL_LIGHT1, GL_LINEAR_ATTENUATION, 0.001f);    
+	glLightf(GL_LIGHT1, GL_QUADRATIC_ATTENUATION, 0.0001f);
 }
 
 void initPlaneLight() {
+	if (!planeLightOn) {
+		glDisable(GL_LIGHT2);
+		return;
+	}
+
 	glEnable(GL_LIGHTING);
-	glEnable(GL_LIGHT2);  // Use LIGHT2
+	glEnable(GL_LIGHT2);
 
-	// Calculate plane position
-	float planeX = planeOrbitRadius * cos(planeOrbitAngle * PI / 180.0f);
-	float planeY = planeOrbitRadius * sin(planeOrbitAngle * PI / 180.0f);
+	float planeX = planeOrbitRadius * cosf(planeOrbitAngle * PI / 180.0f);
+	float planeY = planeOrbitRadius * sinf(planeOrbitAngle * PI / 180.0f);
+	float planeZ = 0.5f;  // Plane is above the orbital plane
 
-	// Light follows the plane
-	GLfloat lightPos[] = { planeX, planeY, 0.5f, 1.0f };
+	GLfloat lightPos[] = { planeX, planeY, planeZ, 1.0f };
 	glLightfv(GL_LIGHT2, GL_POSITION, lightPos);
 
-	// Simple white light
-	GLfloat lightDiffuse[] = { 0.8f, 0.8f, 1.0f, 1.0f };
-	GLfloat lightAmbient[] = { 0.2f, 0.2f, 0.3f, 1.0f };
-	GLfloat lightSpecular[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	// Direction from plane DOWN toward the origin (planet)
+	float dirX = -planeX;  // Toward center X
+	float dirY = -planeY;  // Toward center Y  
+	float dirZ = -planeZ;  // DOWN toward Z=0 (orbital plane)
+
+	// Normalize the direction
+	float len = sqrtf(dirX * dirX + dirY * dirY + dirZ * dirZ);
+	if (len > 1e-6f) {
+		dirX /= len;
+		dirY /= len;
+		dirZ /= len;
+	}
+
+	GLfloat spotDir[] = { dirX, dirY, dirZ };
+	glLightfv(GL_LIGHT2, GL_SPOT_DIRECTION, spotDir);
+
+	// Flashlight parameters - narrow beam pointing down
+	glLightf(GL_LIGHT2, GL_SPOT_CUTOFF, 30.0f);    // Moderate beam width
+	glLightf(GL_LIGHT2, GL_SPOT_EXPONENT, 30.0f);  // Concentrated beam
+
+	// Bright flashlight colors
+	GLfloat lightDiffuse[] = { 1.2f, 1.2f, 1.5f, 1.0f };  // Bright blue-white
+	GLfloat lightAmbient[] = { 0.1f, 0.1f, 0.15f, 1.0f };  // Low ambient
+	GLfloat lightSpecular[] = { 1.5f, 1.5f, 2.0f, 1.0f };  // Bright specular
 
 	glLightfv(GL_LIGHT2, GL_DIFFUSE, lightDiffuse);
 	glLightfv(GL_LIGHT2, GL_AMBIENT, lightAmbient);
 	glLightfv(GL_LIGHT2, GL_SPECULAR, lightSpecular);
 
-	// Moderate attenuation
-	glLightf(GL_LIGHT2, GL_CONSTANT_ATTENUATION, 0.5f);
-	glLightf(GL_LIGHT2, GL_LINEAR_ATTENUATION, 0.05f);
-	glLightf(GL_LIGHT2, GL_QUADRATIC_ATTENUATION, 0.001f);
+	// Reduced attenuation so the flashlight reaches the planet
+	glLightf(GL_LIGHT2, GL_CONSTANT_ATTENUATION, 0.2f);
+	glLightf(GL_LIGHT2, GL_LINEAR_ATTENUATION, 0.005f);
+	glLightf(GL_LIGHT2, GL_QUADRATIC_ATTENUATION, 0.0001f);
+}
+
+GLuint loadTexture(const char* filepath) {
+	GLuint textureID;
+	glGenTextures(1, &textureID);
+
+	int width, height, nrChannels;
+
+	// Flip texture vertically (OpenGL expects 0,0 at bottom-left)
+	stbi_set_flip_vertically_on_load(true);
+
+	// Load image data
+	unsigned char* data = stbi_load(filepath, &width, &height, &nrChannels, 0);
+
+	if (data) {
+		GLenum format;
+		if (nrChannels == 1)
+			format = GL_RED;
+		else if (nrChannels == 3)
+			format = GL_RGB;
+		else if (nrChannels == 4)
+			format = GL_RGBA;
+
+		glBindTexture(GL_TEXTURE_2D, textureID);
+		glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+		gluBuild2DMipmaps(GL_TEXTURE_2D, format, width, height, format, GL_UNSIGNED_BYTE, data);
+
+		// Set texture parameters
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+		printf("Texture loaded successfully: %s (%dx%d, %d channels)\n", filepath, width, height, nrChannels);
+	}
+	else {
+		printf("Failed to load texture: %s\n", filepath);
+	}
+
+	stbi_image_free(data);
+	return textureID;
 }
 
 void positionCamera() {
@@ -258,9 +331,9 @@ void keyboard(unsigned char key, int x, int y) {
 		exit(0);
 		break;
 	case 't': // Increase plane speed smoothly
-		planeSpeed += 0.2f;
-		if (planeSpeed > 3.0f) {
-			planeSpeed = 3.0f;
+		planeSpeed += 0.5f;
+		if (planeSpeed > 10.0f) {
+			planeSpeed = 10.0f;
 			printf("Max plane speed reached\n");
 		}
 		else {
@@ -268,9 +341,9 @@ void keyboard(unsigned char key, int x, int y) {
 		}
 		break;
 	case 'y': // Decrease plane speed smoothly
-		planeSpeed -= 0.2f;
-		if (planeSpeed < 0.2f) {
-			planeSpeed = 0.2f;
+		planeSpeed -= 0.5f;
+		if (planeSpeed < 0.5f) {
+			planeSpeed = 0.5f;
 			printf("Min plane speed reached\n");
 		}
 		else {
@@ -278,7 +351,7 @@ void keyboard(unsigned char key, int x, int y) {
 		}
 		break;
 	case 'o': // Increase orbit speed smoothly
-		orbitSpeed += 0.2f;
+		orbitSpeed += 0.5f;
 		if (orbitSpeed > 10.0f) {
 			orbitSpeed = 10.0f;
 			printf("Max orbit speed reached\n");
@@ -288,9 +361,9 @@ void keyboard(unsigned char key, int x, int y) {
 		}
 		break;
 	case 'p': // Decrease orbit speed smoothly
-		orbitSpeed -= 0.2f;
-		if (orbitSpeed < 0.2f) {
-			orbitSpeed = 0.2f;
+		orbitSpeed -= 0.5f;
+		if (orbitSpeed < 0.5f) {
+			orbitSpeed = 0.5f;
 			printf("Min orbit speed reached\n");
 		}
 		else {
@@ -382,83 +455,116 @@ void createSphere(float radius, int slices , int stacks,float r, float g , float
 	glPopMatrix();
 }
 
-void createPlanet(float planetRadius , int slices , int stacks , float diskInner, float diskOuter)
+void createTexturedSphere(float radius, int slices, int stacks, GLuint textureID) {
+	if (textureID != 0) {
+		glEnable(GL_TEXTURE_2D);
+		glBindTexture(GL_TEXTURE_2D, textureID);
+
+		// Set material properties that work well with textures AND lighting
+		GLfloat ambient[] = { 0.4f, 0.4f, 0.4f, 1.0f };   // Higher ambient for better visibility
+		GLfloat diffuse[] = { 0.8f, 0.8f, 0.8f, 1.0f };   // Good diffuse reflection
+		GLfloat specular[] = { 0.3f, 0.3f, 0.3f, 1.0f };  // Some specular for highlights
+		GLfloat shininess[] = { 20.0f };
+
+		glMaterialfv(GL_FRONT, GL_AMBIENT, ambient);
+		glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuse);
+		glMaterialfv(GL_FRONT, GL_SPECULAR, specular);
+		glMaterialfv(GL_FRONT, GL_SHININESS, shininess);
+
+		// Make sure texture modulates with material colors
+		glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+		GLUquadric* sphere = gluNewQuadric();
+		gluQuadricTexture(sphere, GL_TRUE);
+		gluQuadricNormals(sphere, GLU_SMOOTH);
+		gluSphere(sphere, radius, slices, stacks);
+		gluDeleteQuadric(sphere);
+
+		glDisable(GL_TEXTURE_2D);
+	}
+	else {
+		// Fallback with good lighting properties
+		GLfloat ambient[] = { 0.3f, 0.3f, 0.1f, 1.0f };
+		GLfloat diffuse[] = { 0.8f, 0.8f, 0.2f, 1.0f };
+		GLfloat specular[] = { 0.5f, 0.5f, 0.5f, 1.0f };
+		GLfloat shininess[] = { 32.0f };
+
+		glMaterialfv(GL_FRONT, GL_AMBIENT, ambient);
+		glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuse);
+		glMaterialfv(GL_FRONT, GL_SPECULAR, specular);
+		glMaterialfv(GL_FRONT, GL_SHININESS, shininess);
+
+		createSphere(radius, slices, stacks, 0.8f, 0.8f, 0.2f, 1.0f);
+	}
+}
+
+void createPlanet(float planetRadius, int slices, int stacks, float diskInner, float diskOuter, GLuint textureID)
 {
-	//Planet body
 	glPushMatrix();
 
-	GLfloat planetAmbient[] = { 0.3f, 0.3f, 0.1f, 1.0f };
-	GLfloat planetDiffuse[] = { 0.8f, 0.8f, 0.2f, 1.0f };
-	GLfloat planetSpecular[] = { 0.5f, 0.5f, 0.5f, 1.0f };
-	GLfloat shininess[] = { 60.0f };
+	// Draw the planet - SOLID, no blending
+	glDisable(GL_BLEND);  // Planet should be solid
+	glDepthMask(GL_TRUE); // Enable depth writing
 
-	glMaterialfv(GL_FRONT, GL_AMBIENT, planetAmbient);
-	glMaterialfv(GL_FRONT, GL_DIFFUSE, planetDiffuse);
-	glMaterialfv(GL_FRONT, GL_SPECULAR, planetSpecular);
-	glMaterialfv(GL_FRONT, GL_SHININESS, shininess);
+	glRotated(90, 1, 0, 0); // Rotate planet so texture aligns properly
+	createTexturedSphere(planetRadius, slices, stacks, textureID);
 
-	createSphere(planetRadius, slices, stacks, 0.8f, 0.8f, 0.2f, 1.0f);
+	glPopMatrix();
 
-	//Rings
+	// Draw the ring
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glDisable(GL_CULL_FACE);
-
+	glDisable(GL_CULL_FACE);  // Make ring visible from both sides
 
 	GLfloat ringAmbient[] = { 0.4f, 0.3f, 0.1f, 0.5f };
 	GLfloat ringDiffuse[] = { 0.8f, 0.5f, 0.0f, 0.5f };
 	GLfloat ringSpecular[] = { 0.5f, 0.5f, 0.5f, 0.5f };
+	GLfloat shininess[] = { 32.0f };
 
 	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, ringAmbient);
 	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, ringDiffuse);
 	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, ringSpecular);
 	glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, shininess);
 
-	GLUquadric* ring = gluNewQuadric();
 	glColor4f(0.8f, 0.5f, 0.0f, 0.5f);
-
 	glRotated(70, 1, 0, 0);
+
+	GLUquadric* ring = gluNewQuadric();
 	gluDisk(ring, diskInner, diskOuter, slices, stacks);
-
-
 	gluDeleteQuadric(ring);
-	glDisable(GL_BLEND);
+
 	if (b_culling) {
 		glEnable(GL_CULL_FACE);
 	}
+	glDisable(GL_BLEND);
 
-	glPopMatrix();
 }
 
-
-void createMoon(float moonRadius , int slices, int stacks )
+void createMoon(float moonRadius , int slices, int stacks, static GLuint textureID)
 {
-	GLfloat moonAmbient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
-	GLfloat moonDiffuse[] = { 0.6f, 0.6f, 0.6f, 1.0f };
-	GLfloat moonSpecular[] = { 0.3f, 0.3f, 0.3f, 1.0f };
-	GLfloat shininess[] = { 10.0f };
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDepthMask(GL_FALSE);
 
-	glMaterialfv(GL_FRONT, GL_AMBIENT, moonAmbient);
-	glMaterialfv(GL_FRONT, GL_DIFFUSE, moonDiffuse);
-	glMaterialfv(GL_FRONT, GL_SPECULAR, moonSpecular);
-	glMaterialfv(GL_FRONT, GL_SHININESS, shininess);
-
-	createSphere(moonRadius, slices, stacks, 0.6f, 0.6f, 0.6f, 1.0f);
+	createTexturedSphere(moonRadius, slices, stacks, textureID);
+	
+	glDepthMask(GL_TRUE);
+	glDisable(GL_BLEND);
 }
 
-void createSun(float maxRadius, float decrement) {
+void createSun(float maxRadius, float decrement, GLuint textureID) {
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDepthMask(GL_FALSE);
 
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glDepthMask(GL_FALSE); // Disable depth writing
+	createSphere(maxRadius, 60, 60, 1.0f, 0.9f, 0.0f, 0.15f);
+	createSphere(maxRadius - decrement, 60, 60, 1.0f, 0.8f, 0.0f, 0.25f);
+	createSphere(maxRadius - (decrement * 2), 60, 60, 1.0f, 0.7f, 0.0f, 0.4f);
 
-    createSphere(maxRadius, 60, 60, 1.0f, 0.9f, 0.0f, 0.15f);
-    createSphere(maxRadius-decrement, 60, 60, 1.0f, 0.8f, 0.0f, 0.25f);
-    createSphere(maxRadius - (decrement *2), 60, 60, 1.0f, 0.7f, 0.0f, 0.4f);
-    createSphere(maxRadius - (decrement *3), 60, 60, 1.0f, 0.6f, 0.0f, 1.0f);
+	createTexturedSphere(maxRadius - (decrement * 3), 60, 60, textureID);
 
-	glDepthMask(GLU_TRUE); // Enable depth writing
-    glDisable(GL_BLEND);
+	glDepthMask(GL_TRUE);
+	glDisable(GL_BLEND);
 }
 
 void createStrechedSphere( float radius, int slices,int stacks,float r,float g,float b,float alpha,float scaleX,float scaleY,float scaleZ) {
@@ -475,38 +581,38 @@ void createPlane() {
 
     // Main body:
 	glPushMatrix();
-    createStrechedSphere( 0.5f, 60, 60,		0.2f, 0.2f, 1.0f, 1.0f,		1.0f, 3.0f, 1.0f);
+    createStrechedSphere( 0.3f, 60, 60,		0.2f, 0.2f, 1.0f, 1.0f,		1.0f, 3.0f, 1.0f);
 	glPopMatrix();
 
 	// Hood
 	glPushMatrix();
-	glTranslatef(0.5f, 0.0f, 0.0f);
-	createStrechedSphere(0.5f, 60, 60,		1.0f, 1.0f, 1.0f, 1.0f,		1.0f, 2.0f, 1.2f);
+	glTranslatef(0.3f, 0.0f, 0.0f);
+	createStrechedSphere(0.3f, 60, 60,		1.0f, 1.0f, 1.0f, 1.0f,		1.0f, 2.0f, 1.2f);
 	glPopMatrix();
 
 
 	//Propeller 1
 	glPushMatrix();
 	glTranslatef(0.0f, 0.0f, 1.0f);
-	createSphere(0.3f, 20, 20, 0.5f, 0.5f, 0.5f, 1.0f);
+	createSphere(0.1f, 20, 20, 0.5f, 0.5f, 0.5f, 1.0f);
 	glRotatef(PropellerAngle, 0.0f, 1.0f, 0.0f);
-	createStrechedSphere(0.3f, 20, 20,		0.5f, 0.5f, 0.5f, 0.8f,		3.0f, 0.5f, 1.0f);
+	createStrechedSphere(0.1f, 20, 20,		0.5f, 0.5f, 0.5f, 0.8f,		3.0f, 0.5f, 1.0f);
 	glPopMatrix();	
 
 	//Propeller 2
 	glPushMatrix();
 	glTranslatef(0.0f, 0.0f, -1.0f);
-	createSphere(0.3f, 20, 20, 0.5f, 0.5f, 0.5f, 1.0f);
+	createSphere(0.1f, 20, 20, 0.5f, 0.5f, 0.5f, 1.0f);
 	glRotatef(PropellerAngle, 0.0f, 1.0f, 0.0f);
-	createStrechedSphere(0.3f, 20, 20,		0.5f, 0.5f, 0.5f, 0.8f,		3.0f, 0.5f, 1.0f);
+	createStrechedSphere(0.1f, 20, 20,		0.5f, 0.5f, 0.5f, 0.8f,		3.0f, 0.5f, 1.0f);
 	glPopMatrix();
 
 	//Propeller Front
 	glPushMatrix();
-	glTranslatef(0.0f, 1.5, 0.0f);
-	createSphere(0.3f, 20, 20, 0.5f, 0.5f, 0.5f, 1.0f);
+	glTranslatef(0.0f, 0.9, 0.0f);
+	createSphere(0.1f, 20, 20, 0.5f, 0.5f, 0.5f, 1.0f);
 	glRotatef(PropellerAngle, 0.0f, 1.0f, 0.0f);
-	createStrechedSphere(0.3f, 20, 20, 0.5f, 0.5f, 0.5f, 0.8f, 5.0f, 0.5f, 1.0f);
+	createStrechedSphere(0.1f, 20, 20, 0.5f, 0.5f, 0.5f, 0.8f, 5.0f, 0.5f, 1.0f);
 	glPopMatrix();
    
 }
@@ -522,6 +628,25 @@ bool init(void)
 	glShadeModel(GL_SMOOTH);						   // Enable Smooth Shading
 
 	initLights();
+
+	sunTextureID = loadTexture("8k_sun.jpg"); 
+	if (sunTextureID == 0) {
+		printf("Failed to load sun texture! Using default color.\n");
+	}
+
+	moonTextureID = loadTexture("8k_moon.jpg");
+	if (moonTextureID == 0) {
+		printf("Failed to load moon texture! Using default color.\n");
+	}
+
+	planetTextureID = loadTexture("8k_jupiter.jpg");
+	if (moonTextureID == 0) {
+		printf("Failed to load planet texture! Using default color.\n");
+	}
+
+
+
+
 
 	glEnable(GL_COLOR_MATERIAL);					   // Enable Material Coloring
 	glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);	// Hint for nice perspective interpolation
@@ -600,9 +725,30 @@ void render(void)
 
 	glPushMatrix();
 	glRotated(planetRotationAngle, 0, 1, 0);
+	glColor3f(1.0f, 1.0f, 1.0f);  // Reset color to white
+
 	createPlanet();
 	glPopMatrix();
 
+#pragma endregion
+
+#pragma region Plane
+
+	// Plane orbit
+	if (movingPlaneFlag) {
+		planeOrbitAngle += planeBaseSpeed * planeSpeed * deltaTime; // degrees per second
+		if (planeOrbitAngle > 360.0f) planeOrbitAngle -= 360.0f;
+
+		// Propeller rotation
+		PropellerAngle += PropellerSpeed * planeSpeed * deltaTime;
+		if (PropellerAngle > 360.0f) PropellerAngle -= 360.0f;
+	}
+
+	glPushMatrix();
+	glRotated(planeOrbitAngle, 0, 0, 1);
+	glTranslated(planeOrbitRadius, 0.0f, 0.0f);
+	createPlane();
+	glPopMatrix();
 #pragma endregion
 
 #pragma region Orbit
@@ -625,31 +771,15 @@ void render(void)
 	glPushMatrix();
 	glRotated(sunOrbitAngle + 180.0f, 0, 0, 1);
 	glTranslatef(orbitRadius, 0.0f, 0.0f);
+	glColor3f(1.0f, 1.0f, 1.0f);  // Reset color to white
+	glDisable(GL_LIGHTING);
 	createMoon();
+	glEnable(GL_LIGHTING);
+
+
 	glPopMatrix();
 
 #pragma endregion 
-
-#pragma region Plane
-
-	// Plane orbit
-	if (movingPlaneFlag) {
-		planeOrbitAngle += planeBaseSpeed * planeSpeed * deltaTime; // degrees per second
-		if (planeOrbitAngle > 360.0f) planeOrbitAngle -= 360.0f;
-
-		// Propeller rotation
-		PropellerAngle += PropellerSpeed * planeSpeed * deltaTime;
-		if (PropellerAngle > 360.0f) PropellerAngle -= 360.0f;
-	}
-
-	glPushMatrix();
-	glRotated(planeOrbitAngle, 0, 0, 1);
-	glTranslated(planeOrbitRadius, 0.0f, 0.0f);
-
-
-	createPlane();
-	glPopMatrix();
-#pragma endregion
 
 	//drawAxis();
 	glutSwapBuffers();

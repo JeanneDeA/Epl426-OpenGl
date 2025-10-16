@@ -2,7 +2,6 @@ To Do :
 
 
 7. add wings
-12. remove suns circles based on intensity 
 13. clouds
 14. stars
 

@@ -42,8 +42,21 @@ float Lerp(float a, float b, float w)
 	return a + w * (b - a);
 }
 
-const float PI = 3.1415926535897932384626433832795028;
+float clamp(float value, float min, float max) {
+	if (value < min) return min;
+	if (value > max) return max;
+	return value;
+}
 
+float smoothstep(float edge0, float edge1, float x) {
+	float t = clamp((x - edge0) / (edge1 - edge0), 0.0f, 1.0f);
+	return t * t * (3.0f - 2.0f * t);
+}
+
+
+const float PI = 3.1415926535897932384626433832795028;
+const float minIntensity = 0.2f;
+const float maxIntensity = 2.0f;
 
 // Global Variables
 bool b_culling = false;
@@ -176,9 +189,6 @@ void initSunLight() {
 
 	GLfloat lightPos[] = { sunX, sunY, sunZ, 1.0f };	
 	glLightfv(GL_LIGHT1, GL_POSITION, lightPos);
-
-	const float minIntensity = 0.2f;
-	const float maxIntensity = 2.0f;
 
 	float timeFactor = (cos(sunOrbitAngle * PI / 180.0f) + 1) / 2;
 
@@ -593,16 +603,56 @@ void createMoon(float moonRadius , int slices, int stacks, static GLuint texture
 	glDisable(GL_BLEND);
 }
 
+//void createSun(float maxRadius, float decrement, GLuint textureID) {
+//	glEnable(GL_BLEND);
+//	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+//	glDepthMask(GL_FALSE);
+//
+//	createSphere(maxRadius, 60, 60, 1.0f, 0.9f, 0.0f, 0.15f);
+//	createSphere(maxRadius - decrement, 60, 60, 1.0f, 0.8f, 0.0f, 0.25f);
+//	createSphere(maxRadius - (decrement * 2), 60, 60, 1.0f, 0.7f, 0.0f, 0.4f);
+//
+//	createTexturedSphere(maxRadius - (decrement * 3), 60, 60, textureID);
+//
+//	glDepthMask(GL_TRUE);
+//	glDisable(GL_BLEND);
+//}
+
 void createSun(float maxRadius, float decrement, GLuint textureID) {
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glDepthMask(GL_FALSE);
 
-	createSphere(maxRadius, 60, 60, 1.0f, 0.9f, 0.0f, 0.15f);
-	createSphere(maxRadius - decrement, 60, 60, 1.0f, 0.8f, 0.0f, 0.25f);
-	createSphere(maxRadius - (decrement * 2), 60, 60, 1.0f, 0.7f, 0.0f, 0.4f);
+	float timeFactor = (cos(sunOrbitAngle * PI / 180.0f) + 1) / 2;
+	float intensity = Lerp(minIntensity, maxIntensity, timeFactor);
 
+	// transition ranges with overlap 
+	float layer3_start = 0.2f;   // Inner glow starts appearing
+	float layer3_end = 1.1f;     // Inner glow fully visible
+
+	float layer2_start = 0.65f;  // Middle layer starts appearing  
+	float layer2_end = 1.55f;    // Middle layer fully visible
+
+	float layer1_start = 1.1f;   // Outer layer starts appearing
+	float layer1_end = 2.0f;     // Outer layer fully visible
+
+	// Calculate smooth alpha values with overlap
+	float alpha3 = smoothstep(layer3_start, layer3_end, intensity); 
+	float alpha2 = smoothstep(layer2_start, layer2_end, intensity); 
+	float alpha1 = smoothstep(layer1_start, layer1_end, intensity); 
+
+	// Create spheres with smooth alpha transitions
 	createTexturedSphere(maxRadius - (decrement * 3), 60, 60, textureID);
+
+	if (alpha3 > 0.01f) {
+		createSphere(maxRadius - (decrement * 2), 60, 60, 1.0f, 0.7f, 0.0f, 0.4f * alpha3);
+	}
+	if (alpha2 > 0.01f) {
+		createSphere(maxRadius - decrement, 60, 60, 1.0f, 0.8f, 0.0f, 0.25f * alpha2);
+	}
+	if (alpha1 > 0.01f) {
+		createSphere(maxRadius, 60, 60, 1.0f, 0.9f, 0.0f, 0.15f * alpha1);
+	}
 
 	glDepthMask(GL_TRUE);
 	glDisable(GL_BLEND);

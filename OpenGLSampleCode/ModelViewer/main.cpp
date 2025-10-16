@@ -258,6 +258,24 @@ void initPlaneLight() {
 	glLightf(GL_LIGHT2, GL_QUADRATIC_ATTENUATION, 0.0001f);
 }
 
+void initTextures() {
+
+	sunTextureID = loadTexture("8k_sun.jpg");
+	if (sunTextureID == 0) {
+		printf("Failed to load sun texture! Using default color.\n");
+	}
+
+	moonTextureID = loadTexture("8k_moon.jpg");
+	if (moonTextureID == 0) {
+		printf("Failed to load moon texture! Using default color.\n");
+	}
+
+	planetTextureID = loadTexture("8k_jupiter.jpg");
+	if (moonTextureID == 0) {
+		printf("Failed to load planet texture! Using default color.\n");
+	}
+}
+
 GLuint loadTexture(const char* filepath) {
 	GLuint textureID;
 	glGenTextures(1, &textureID);
@@ -726,21 +744,7 @@ bool init(void)
 	glShadeModel(GL_SMOOTH);						   // Enable Smooth Shading
 
 	initLights();
-
-	sunTextureID = loadTexture("8k_sun.jpg"); 
-	if (sunTextureID == 0) {
-		printf("Failed to load sun texture! Using default color.\n");
-	}
-
-	moonTextureID = loadTexture("8k_moon.jpg");
-	if (moonTextureID == 0) {
-		printf("Failed to load moon texture! Using default color.\n");
-	}
-
-	planetTextureID = loadTexture("8k_jupiter.jpg");
-	if (moonTextureID == 0) {
-		printf("Failed to load planet texture! Using default color.\n");
-	}
+	initTextures();
 
 
 
@@ -847,6 +851,7 @@ void render(void)
 	glTranslated(planeOrbitRadius, 0.0f, 0.0f);
 	createPlane();
 	glPopMatrix();
+
 #pragma endregion
 
 #pragma region Orbit

@@ -85,7 +85,11 @@ float lastTime = 0.0f;
 float currentTime = 0.0f;
 float deltaTime = 0.0f;
 			
-
+// Camera variables
+float cameraX = 0.0f;
+float cameraY = 0.0f;
+float cameraZ = 30.0f;
+float zoomLevel = 30.0f;
 
 
 // Function Prototypes
@@ -286,16 +290,15 @@ GLuint loadTexture(const char* filepath) {
 }
 
 void positionCamera() {
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();                // Reset The Projection Matrix
+	gluPerspective(45.0f, aspect, 0.1f, 100.0f);
+	gluLookAt(cameraX, cameraY, cameraZ,
+		cameraX, cameraY, 0.0f,
+		0.0f, 1.0f, 0.0f);
 
-		glMatrixMode(GL_PROJECTION);     
-
-		glLoadIdentity();                // Reset The Projection Matrix
-		gluPerspective(45.0f, aspect, 0.1, 100.0);
-		gluLookAt(0.0f, 0.0f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
-
-		glMatrixMode(GL_MODELVIEW);      // Select The Modelview Matrix
-
-	
+	glMatrixMode(GL_MODELVIEW);      // Select The Modelview Matrix
+	glLoadIdentity();
 }
 
 void backgroundChange() {
@@ -326,10 +329,12 @@ void reshape(int w, int h)
 }
 
 void keyboard(unsigned char key, int x, int y) {
+
 	switch (key) {
 	case 27: // Escape
 		exit(0);
 		break;
+
 	case 't': // Increase plane speed smoothly
 		planeSpeed += 0.5f;
 		if (planeSpeed > 10.0f) {
@@ -390,6 +395,29 @@ void keyboard(unsigned char key, int x, int y) {
 			printf("Plane light: OFF\n");
 		}
 		break;
+	case 'c': // Reset camera position
+		cameraX = 0.0f;
+		cameraY = 0.0f;
+		zoomLevel = 30.0f;
+		cameraZ = zoomLevel;
+		glutPostRedisplay();
+		break;
+	case '+': // Zoom in
+	case '=': // Usually same key as '+' without shift
+		printf("Zooming in\n");
+		zoomLevel -= 1.0f;
+		if (zoomLevel < 5.0f) zoomLevel = 5.0f;
+		cameraZ = zoomLevel;
+		glutPostRedisplay();
+		break;
+
+	case '-': // Zoom out
+	case '_': // Usually same key as '-' without shift
+		zoomLevel += 1.0f;
+		if (zoomLevel > 80.0f) zoomLevel = 80.0f;
+		cameraZ = zoomLevel;
+		glutPostRedisplay();
+		break;
 
 	case ' ': // Toggle all animations
 		movingPlanetFlag = !movingPlanetFlag;
@@ -403,9 +431,21 @@ void keyboard(unsigned char key, int x, int y) {
 }
 
 void special_keys(int a_keys, int x, int y)
-{
+{	
+	float moveSpeed = 0.5f;
     switch (a_keys) {
-      
+	case GLUT_KEY_UP:
+		cameraY += moveSpeed;
+		break;
+	case GLUT_KEY_DOWN:
+		cameraY -= moveSpeed;
+		break;
+	case GLUT_KEY_LEFT:
+		cameraX -= moveSpeed;
+		break;
+	case GLUT_KEY_RIGHT:
+		cameraX += moveSpeed;
+		break;
         case GLUT_KEY_F1:
             if (!g_gamemode) {
                 g_fullscreen = !g_fullscreen;
@@ -415,6 +455,7 @@ void special_keys(int a_keys, int x, int y)
             break;
         default:
             break;
+
     }
     positionCamera();
     glutPostRedisplay();
@@ -579,6 +620,9 @@ void createStrechedSphere( float radius, int slices,int stacks,float r,float g,f
 
 void createPlane() {
 
+	GLboolean lightingWasEnabled = glIsEnabled(GL_LIGHT2);
+	glDisable(GL_LIGHT2);
+
     // Main body:
 	glPushMatrix();
     createStrechedSphere( 0.3f, 60, 60,		0.2f, 0.2f, 1.0f, 1.0f,		1.0f, 3.0f, 1.0f);
@@ -614,6 +658,10 @@ void createPlane() {
 	glRotatef(PropellerAngle, 0.0f, 1.0f, 0.0f);
 	createStrechedSphere(0.1f, 20, 20, 0.5f, 0.5f, 0.5f, 0.8f, 5.0f, 0.5f, 1.0f);
 	glPopMatrix();
+
+	if (lightingWasEnabled) {
+        glEnable(GL_LIGHT2);
+    }
    
 }
 
@@ -684,7 +732,6 @@ int main(int argc, char** argv)
 
 	initAnimation();								// Initialize animation timing
 
-
 	glutSetCursor(GLUT_CURSOR_NONE);
 	glutDisplayFunc(render);                     
 	glutReshapeFunc(reshape);                    
@@ -711,6 +758,7 @@ void render(void)
 	glLoadIdentity();
 
 	// Update lighting every frame
+	positionCamera();
 	initSunLight();
 	if(planeLightOn) initPlaneLight();
 	backgroundChange();

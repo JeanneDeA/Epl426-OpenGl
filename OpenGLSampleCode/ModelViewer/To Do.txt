@@ -2,10 +2,9 @@ To Do :
 
 
 7. add wings
-9. Camera position change
-10. Orbit radius change
-11. Open planes light only at night
 12. remove suns circles based on intensity 
+13. clouds
+14. stars
 
 
 plane light in cone on the planet
